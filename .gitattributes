@@ -1,0 +1,2 @@
+# .gitattributes
+.env filter=git-crypt

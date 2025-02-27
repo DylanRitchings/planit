@@ -1,0 +1,6 @@
+<div id="vote-buttons">
+  {{range $value := .CardValues  }}
+  <button hx-swap="outerHTML" name="vote" hx-target="#vote-buttons" hx-post="/update-vote" class="{{ if eq $.CurrentVote $value }}selected{{ end }}" value="{{ $value }}">{{ $value }}</button>
+  {{ end }}
+
+</div>

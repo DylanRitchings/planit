@@ -1,39 +1,42 @@
 <html>
 <head>
+  <link rel="stylesheet" type="text/css" href="/static/style.css">
   <script src="https://unpkg.com/htmx.org"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/ws.js"></script>
 </head>
-  <div hx-ext="ws" ws-connect="/ws?room={{ .Room }}&admin={{ .Admin }}">
+  <div hx-ext="ws" ws-connect="/ws?room={{ .Room }}&admin={{ .Admin }}&userid={{ .UserId }}" >
   <h1> RoomId: {{ .Room }} </h1>
-<!-- <div class="votes_div" hx-inlude="#hidden-name" hx-get="/get-votes" hx-trigger="list-updated" hx-swap="outerHTML"> -->
     {{ .Votes }}
-<!-- <form hx-post="/vote" hx-include="#vote, #hidden-name" hx-trigger="change from:#vote" hx-target=".votes_div"> -->
-    <form ws-send hx-trigger="change from:#vote" hx-target="#votes_table">
-  <input type="hidden" id="name" name="name" value="{{ .Name }}">
+   
+  <form><!-- <form ws-send hx-trigger="change from:#vote" hx-target="#votes_table"> -->
+
+  <input type="hidden" id="userid" name="userid" value="{{ .UserId }}">
   <input type="hidden" id="room" name="room" value="{{ .Room }}">
-  <!-- <input type="hidden" id="admin" name="admin" value="{{ .Admin }}"> -->
 
   {{ if not .Admin }}
-  <select id="vote" name="vote">
-    <option value="1">1</option>
-    <option value="2">2</option>
-    <option value="3">3</option>
-    <option value="5">5</option>
-    <option value="8">8</option>
-  </select>
+      <div id="vote-buttons">
+        {{range $value := .CardValues  }}
+        <button hx-swap="outerHTML" name="vote" hx-target="#vote-buttons" hx-post="/update-vote" value="{{ $value }}">{{ $value }}</button>
+        {{ end }}
+
+      </div>
   {{ end }}
 
   {{ if .Admin }}
   <button id="reveal-votes"
     hx-post="/reveal-votes"
     hx-include="#room" 
-    hx-trigger="click">
+    hx-trigger="click"
+    hx-swap="none"
+      >
     Reveal votes
   </button>
   <button id="reset-votes"
     hx-post="/reset-votes"
     hx-include="#room" 
-    hx-trigger="click">
+    hx-trigger="click"
+    hx-swap="none"
+      >
     Reset votes
   </button>
   {{ end }}

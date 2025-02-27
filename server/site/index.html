@@ -1,13 +1,14 @@
 <script src="https://unpkg.com/htmx.org"></script>
 <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/ws.js"></script>
+<link rel="stylesheet" type="text/css" href="/static/style.css">
 
 <div>
   <!-- <form id="form" hx-post="/join-room" hx-include="#name" hx-target="#ws-container" hx-swap="outerHTML"> -->
   <form>
   <label for="name">Name: </label>
-  <input type="text" id="name" name="name">
+  <input type="text" id="name" name="name"/>
   <label for="room">Room ID: </label>
-  <input type="text" id="room" name="room">
+  <input type="text" id="room" name="room"/>
   </form>
   <!-- <button id="join" type="submit"> -->
   <!--   Join room -->
@@ -20,12 +21,18 @@
     hx-trigger="click">
     Join room
   </button>
+  <form>
+
+  <label for="name">Card values (seperate with ","): </label>
+  <input type="text" id="card-values" name="card-values" value="1,2,3,5,8"/>
+  </form>
   <button id="create"
     hx-post="/create-room"
-    hx-include="#name"
+    hx-include="#card-values"
     hx-target="body"
     hx-trigger="click">
     Create room
   </button>
+
 </div>
 

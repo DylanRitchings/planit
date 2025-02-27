@@ -6,17 +6,17 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-
+	"strings"
 	"github.com/gorilla/websocket"
-  "strconv"
+	// "strconv"
 	"encoding/json"
-  "github.com/google/uuid"
+	"github.com/oklog/ulid/v2"
 )
 
-// userMap := make(map[string]string)
-
-// var voteMap = make(map[string]string)
-
+// TODO
+// - join room link
+// - css
+// - create watcher option
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -24,95 +24,151 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// var connections = make(map[*websocket.Conn]bool)
-
-// TODO  reset votes button, move voting logic out of websocket function and into normal response
-
 type Room struct {
   id string
-  connections map[*websocket.Conn]Connection
-  voteMap map[string]string
+  // connections map[*websocket.Conn]Connection
+  // voteMap map[string]string
+  userMap map[string]*User
   showVotes bool
+  cardValues []string
 }
 
-type Connection struct {
+type User struct {
+  conn *websocket.Conn
+  vote string
+  name string
   isAdmin bool
 }
 
-var rooms = make(map[string]Room)
+// type Connection struct {
+//   isAdmin bool
+// }
+
+var rooms = make(map[string]*Room)
+
+func getRoom(r *http.Request) *Room{
+    roomId  := r.URL.Query().Get("room")
+
+    room := rooms[roomId]
+    return room
+}
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
+
   room := getRoom(r)
+
+  userId := r.URL.Query().Get("userid")
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("Error upgrading to WebSocket:", err)
 		return
 	}
 	defer conn.Close()
+  defer userCleanup(room, userId)
 
+  room.userMap[userId].conn = conn
 
-  connection := Connection{
-    isAdmin: isAdmin(r) ,
-  } 
-
-	room.connections[conn] = connection
-
-	defer delete(room.connections, conn)
-
+  sendWebsocket(room, renderVoteDiv(room))
 	for {
 		messageType, msg, err := conn.ReadMessage()
-    log.Println("messagetype: ", messageType)
+	   log.Println("messagetype: ", messageType)
 		if err != nil {
 			log.Println("Read error:", err)
 			break
 		}
-    var jsonData map[string]any
-    err = json.Unmarshal(msg, &jsonData)
-    if err != nil {
-      fmt.Println("Error decoding JSON:", err)
-      return
-    }
-
-    
-    
-		name, okName := jsonData["name"].(string) // Type assertion for "name"
-		vote, okVote := jsonData["vote"].(string) // Type assertion for "vote"
-
-		if !okName || !okVote {
-			fmt.Println("Invalid data format")
-			continue
-		}
-
-    room.voteMap[name] = vote
-    // updatedVotesHTML := renderVoteDiv()
-
-
-		// Echo the message back
-    for conn := range room.connections {
-      vote_div := renderVoteDiv(room) //TODO move this out
-      err := conn.WriteMessage(messageType, []byte(vote_div))
-
-      if err != nil {
-          log.Println("Write error:", err)
-          conn.Close()
-          delete(room.connections, conn)
-      }
-    }
+	   var jsonData map[string]any
+	   err = json.Unmarshal(msg, &jsonData)
+	   if err != nil {
+	     fmt.Println("Error decoding JSON:", err)
+	     return
+	   }
 	}
 }
 
+func userCleanup(room *Room, userId string){
+  delete(room.userMap, userId)
+  voteDiv := renderVoteDiv(room)
+  sendWebsocket(room, voteDiv)
+}
+
 func main() {
+  fs := http.FileServer(http.Dir("./site/static/"))
+  http.Handle("/static/", http.StripPrefix("/static/", fs)) // Serve static files
 	http.Handle("/", http.FileServer(http.Dir("./site/"))) // Serve HTML files
   http.HandleFunc("/join-room", joinRoom)
   http.HandleFunc("/create-room", createRoom)
   http.HandleFunc("/reveal-votes", revealVotesHandler)
-  // http.HandleFunc("/reset-votes", resetVotesHandler)
-  // http.HandleFunc("/refresh", refreshVotes)
+  http.HandleFunc("/update-vote", updateVoteHandler)
+  http.HandleFunc("/reset-votes", resetVotesHandler)
 	http.HandleFunc("/ws", handleWebSocket)
 
 	log.Println("Server started on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
+
+func updateVoteHandler(w http.ResponseWriter, r *http.Request){ 
+  roomId := r.FormValue("room")
+  userId := r.FormValue("userid")
+  vote := r.FormValue("vote")
+  log.Println("vote:", vote)
+
+  room := rooms[roomId]
+  user := room.userMap[userId]
+  user.vote = vote
+
+  room.userMap[userId] = user
+
+  vote_div := renderVoteDiv(room)
+
+  renderVoteButtonDiv(w, room, vote)
+  sendWebsocket(room, vote_div)
+}
+
+func renderVoteButtonDiv(w http.ResponseWriter, room *Room, vote string){
+    data := struct {
+        CardValues []string
+        CurrentVote string
+    }{
+        CardValues: room.cardValues,
+        CurrentVote: vote,
+    }
+
+    tmpl, err := template.ParseFiles("./site/vote_button_div.html")
+    if err != nil {
+        http.Error(w, "Unable to load template", http.StatusInternalServerError)
+        return
+    }
+
+    err = tmpl.Execute(w, data)
+
+    log.Println(err)
+    if err != nil {
+        http.Error(w, "Unable to render template", http.StatusInternalServerError)
+        return
+    }
+} 
+
+func resetVotesHandler(w http.ResponseWriter, r *http.Request) {
+  roomId := r.FormValue("room")
+  room := rooms[roomId]
+  room.showVotes = false
+
+  var keys []string
+  for userId := range room.userMap {
+      keys = append(keys, userId)
+  }
+
+  for _, userId := range keys {
+      user := room.userMap[userId]
+      user.vote = "" 
+      room.userMap[userId] = user 
+  }
+
+  vote_div := renderVoteDiv(room)
+  sendWebsocket(room, vote_div)
+}
+
 
 func revealVotesHandler(w http.ResponseWriter, r *http.Request){ 
   roomId := r.FormValue("room")
@@ -120,17 +176,17 @@ func revealVotesHandler(w http.ResponseWriter, r *http.Request){
   room := rooms[roomId]
   room.showVotes = true
   vote_div := renderVoteDiv(room)
-  sendResponse(room, vote_div)
+  sendWebsocket(room, vote_div)
 }
 
-func sendResponse(room Room, response string) {
-  for conn := range room.connections {
-    err := conn.WriteMessage(1, []byte(response))
+func sendWebsocket(room *Room, response string) {
+  for userId, user := range room.userMap {
+    err := user.conn.WriteMessage(1, []byte(response))
 
     if err != nil {
         log.Println("Write error:", err)
-        conn.Close()
-        delete(room.connections, conn)
+        user.conn.Close()
+        delete(room.userMap, userId)
     }
   }
 }
@@ -138,64 +194,85 @@ func sendResponse(room Room, response string) {
 
 
 func createRoom(w http.ResponseWriter, r *http.Request) {
-  newUUID := uuid.New().String()
-  log.Println("Creating room: ", newUUID)
-  room := Room{
-    id: newUUID,
-    connections: make(map[*websocket.Conn]Connection),
-    voteMap: make(map[string]string),
-    showVotes: false,
+  uid := ulid.Make().String()
+
+  userId := ulid.Make().String()
+  name := r.FormValue("name")
+  cardValuesStr := r.FormValue("card-values")
+  cardValues := strings.Split(cardValuesStr, ",")
+
+  user := &User{
+    name: name,
   }
 
-  rooms[newUUID] = room
-  name := r.FormValue("name")
-  renderVotingRoom(w, name, room, true)
+  log.Println("Creating room: ", uid)
+  room := &Room{
+    id: uid,
+    // connections: make(map[*websocket.Conn]Connection),
+    userMap: map[string]*User{userId: user},
+    showVotes: false,
+    cardValues: cardValues,
+  }
+
+  rooms[uid] = room
+  // name := r.FormValue("name")
+  
+
+  renderVotingRoom(w, userId, room, true)
 }
 
-func getRoom(r *http.Request) Room{
-    roomId  := r.URL.Query().Get("room")
-
-    room := rooms[roomId]
-    return room
-}
 
 
-func isAdmin(r *http.Request) bool{
-    isAdminStr  := r.URL.Query().Get("admin")
-
-    isAdmin, err := strconv.ParseBool(isAdminStr)
-
-    if err != nil {
-      log.Fatal(err)
-    }
-    
-    return isAdmin
-}
+// func isAdmin(r *http.Request) bool{
+//     isAdminStr  := r.URL.Query().Get("admin")
+//
+//     isAdmin, err := strconv.ParseBool(isAdminStr)
+//
+//     if err != nil {
+//       log.Fatal(err)
+//     }
+//
+//     return isAdmin
+// }
 
 
 
 func joinRoom(w http.ResponseWriter, r *http.Request) {
+    uid := ulid.Make().String()
     name := r.FormValue("name")
     roomId := r.FormValue("room")
-    room := rooms[roomId] 
-    room.voteMap[name] = "";   
-    renderVotingRoom(w, name, room, false)
+
+    room, exists := rooms[roomId]
+    if !exists {
+        http.Error(w, "Room not found", http.StatusNotFound)
+        return
+    }
+    user := &User{
+      name: name,
+    }
+
+    room.userMap[uid] = user;   
+    renderVotingRoom(w, uid, room, false)
 }
 
-func renderVotingRoom(w http.ResponseWriter, name string, room Room, isAdmin bool) {
+func renderVotingRoom(w http.ResponseWriter, userId string, room *Room, isAdmin bool) {
 
     votes := renderVoteDiv(room)
     data := struct {
         Room string
         Votes template.HTML
-        Name  string
+        // Name  string
         Admin bool
+        UserId string
+        CardValues []string
     }{
         Room: room.id,
         Votes: template.HTML(votes),
-        Name: name,
+        // Name: name,
         Admin: isAdmin,
-  }
+        UserId: userId, 
+        CardValues: room.cardValues,
+    }
 
     tmpl, err := template.ParseFiles("./site/voting.html")
     if err != nil {
@@ -214,13 +291,24 @@ func renderVotingRoom(w http.ResponseWriter, name string, room Room, isAdmin boo
 
 
 
-func renderVoteDiv(room Room) string {
+func renderVoteDiv(room *Room) string {
+
+    votes := make(map[string]string)
+      
+    for _, user := range room.userMap {
+      if room.showVotes {
+        votes[user.name] = user.vote
+      } else if user.vote == "" {
+        votes[user.name] = ""
+      } else {
+        votes[user.name] = "*"
+      }
+    }
+
     data := struct {
         Votes map[string]string
-        ShowVotes bool
     }{
-        Votes: room.voteMap,
-        ShowVotes: room.showVotes,
+        Votes: votes,
     }
 
 
@@ -239,8 +327,23 @@ func renderVoteDiv(room Room) string {
         return ""
     }
 
-    // Return the rendered template as a string
-    // log.Println(buf.String())
     return buf.String()
 }
 
+	//
+	//
+	//
+	// 	name, okName := jsonData["name"].(string) // Type assertion for "name"
+	// 	vote, okVote := jsonData["vote"].(string) // Type assertion for "vote"
+	//
+	// 	if !okName || !okVote {
+	// 		fmt.Println("Invalid data format")
+	// 		continue
+	// 	}
+	//
+	//    room.voteMap[name] = vote
+	//
+	//
+	//
+	//    vote_div := renderVoteDiv(room) 
+	//    sendResponse(room, vote_div)

@@ -1,4 +1,4 @@
-<table id="votes_table" hx-swap="outerHTML"> <!-- hx-swap="outerhtml"   hx-get="/refresh" hx-trigger="refresh" -->
+<table id="votes_table" hx-swap="outerhtml"> <!--    hx-get="/refresh" hx-trigger="refresh" -->
   <thead>
     <tr>
       <th>Name</th>
@@ -9,7 +9,7 @@
      {{range $name, $vote := .Votes}}
     <tr>
     <td>{{ $name }}</td>
-      <td>{{ if $.ShowVotes }}{{ $vote }}{{ else }}{{ if ne $vote "" }}*{{ end }}{{ end }}</td>
+      <td>{{ $vote }} </td>
     </tr>
       {{end}}
    </tbody>

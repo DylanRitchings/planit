@@ -62,7 +62,6 @@ func main() {
   basePath := getBasePath()
   staticDir := filepath.Join(basePath, "site", "static")
 
-  log.Printf(staticDir)
   fs := http.FileServer(http.Dir(staticDir))
   http.Handle("/static/", http.StripPrefix("/static/", fs)) // Serve static files
   http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

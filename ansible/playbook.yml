@@ -148,8 +148,6 @@
       file:
         src: /etc/nginx/sites-available/planit.dylanrit.uk
         dest: /etc/nginx/sites-enabled/planit.dylanrit.uk
-        # src: /etc/nginx/sites-available/default
-        # dest: /etc/nginx/sites-enabled/default
         state: link
 
     - name: Remove default nginx
@@ -194,7 +192,6 @@
         name: planit.service
         enabled: yes
         state: restarted
-
 
     - name: Reboot 
       when: update.changed

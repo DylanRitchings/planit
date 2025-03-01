@@ -2,21 +2,21 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"github.com/gorilla/websocket"
-	// "strconv"
-	"encoding/json"
 	"github.com/oklog/ulid/v2"
 )
 
 // TODO
 // - join room link
-// - css
-// - create watcher option
+// - create observer option
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -26,8 +26,6 @@ var upgrader = websocket.Upgrader{
 
 type Room struct {
   id string
-  // connections map[*websocket.Conn]Connection
-  // voteMap map[string]string
   userMap map[string]*User
   showVotes bool
   cardValues []string
@@ -37,14 +35,53 @@ type User struct {
   conn *websocket.Conn
   vote string
   name string
-  isAdmin bool
+  // isAdmin bool
 }
 
-// type Connection struct {
-//   isAdmin bool
-// }
-
 var rooms = make(map[string]*Room)
+
+func getBasePath() string {
+	execPath, err := os.Executable()
+	if err != nil {
+		log.Fatalf("Error getting executable path: %v", err)
+	}
+	dir := filepath.Dir(execPath) 
+	return dir
+
+}
+
+func getHtmlPath(file_name string)string{
+  basePath := getBasePath()
+  
+  filePath := filepath.Join(basePath, "site", file_name)
+  return filePath
+}
+
+func main() {
+
+  basePath := getBasePath()
+  staticDir := filepath.Join(basePath, "site", "static")
+
+  log.Printf(staticDir)
+  fs := http.FileServer(http.Dir(staticDir))
+  http.Handle("/static/", http.StripPrefix("/static/", fs)) // Serve static files
+  http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+      log.Printf("Received request for: %s", r.URL.Path)
+      http.ServeFile(w, r, getHtmlPath("index.html"))
+  })
+  http.HandleFunc("/join-room", joinRoom)
+  http.HandleFunc("/create-room", createRoom)
+  http.HandleFunc("/reveal-votes", revealVotesHandler)
+  http.HandleFunc("/update-vote", updateVoteHandler)
+  http.HandleFunc("/reset-votes", resetVotesHandler)
+	http.HandleFunc("/ws", handleWebSocket)
+
+	log.Println("Server started on :8080")
+  err := http.ListenAndServe(":8080", nil)
+  if err != nil {
+      log.Fatalf("Server failed: %v", err)
+  }
+}
 
 func getRoom(r *http.Request) *Room{
     roomId  := r.URL.Query().Get("room")
@@ -92,20 +129,6 @@ func userCleanup(room *Room, userId string){
   sendWebsocket(room, voteDiv)
 }
 
-func main() {
-  fs := http.FileServer(http.Dir("./site/static/"))
-  http.Handle("/static/", http.StripPrefix("/static/", fs)) // Serve static files
-	http.Handle("/", http.FileServer(http.Dir("./site/"))) // Serve HTML files
-  http.HandleFunc("/join-room", joinRoom)
-  http.HandleFunc("/create-room", createRoom)
-  http.HandleFunc("/reveal-votes", revealVotesHandler)
-  http.HandleFunc("/update-vote", updateVoteHandler)
-  http.HandleFunc("/reset-votes", resetVotesHandler)
-	http.HandleFunc("/ws", handleWebSocket)
-
-	log.Println("Server started on :8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
-}
 
 func updateVoteHandler(w http.ResponseWriter, r *http.Request){ 
   roomId := r.FormValue("room")
@@ -134,7 +157,7 @@ func renderVoteButtonDiv(w http.ResponseWriter, room *Room, vote string){
         CurrentVote: vote,
     }
 
-    tmpl, err := template.ParseFiles("./site/vote_button_div.html")
+    tmpl, err := template.ParseFiles(getHtmlPath("vote_button_div.html"))
     if err != nil {
         http.Error(w, "Unable to load template", http.StatusInternalServerError)
         return
@@ -208,32 +231,15 @@ func createRoom(w http.ResponseWriter, r *http.Request) {
   log.Println("Creating room: ", uid)
   room := &Room{
     id: uid,
-    // connections: make(map[*websocket.Conn]Connection),
     userMap: map[string]*User{userId: user},
     showVotes: false,
     cardValues: cardValues,
   }
 
   rooms[uid] = room
-  // name := r.FormValue("name")
-  
 
   renderVotingRoom(w, userId, room, true)
 }
-
-
-
-// func isAdmin(r *http.Request) bool{
-//     isAdminStr  := r.URL.Query().Get("admin")
-//
-//     isAdmin, err := strconv.ParseBool(isAdminStr)
-//
-//     if err != nil {
-//       log.Fatal(err)
-//     }
-//
-//     return isAdmin
-// }
 
 
 
@@ -261,20 +267,18 @@ func renderVotingRoom(w http.ResponseWriter, userId string, room *Room, isAdmin 
     data := struct {
         Room string
         Votes template.HTML
-        // Name  string
         Admin bool
         UserId string
         CardValues []string
     }{
         Room: room.id,
         Votes: template.HTML(votes),
-        // Name: name,
         Admin: isAdmin,
         UserId: userId, 
         CardValues: room.cardValues,
     }
 
-    tmpl, err := template.ParseFiles("./site/voting.html")
+    tmpl, err := template.ParseFiles(getHtmlPath("voting.html"))
     if err != nil {
         http.Error(w, "Unable to load template", http.StatusInternalServerError)
         return
@@ -312,7 +316,7 @@ func renderVoteDiv(room *Room) string {
     }
 
 
-    tmpl, err := template.ParseFiles("./site/votes_div.html")
+    tmpl, err := template.ParseFiles(getHtmlPath("votes_div.html"))
 
     if err != nil {
         log.Println("Unable to load template", err)
@@ -330,20 +334,3 @@ func renderVoteDiv(room *Room) string {
     return buf.String()
 }
 
-	//
-	//
-	//
-	// 	name, okName := jsonData["name"].(string) // Type assertion for "name"
-	// 	vote, okVote := jsonData["vote"].(string) // Type assertion for "vote"
-	//
-	// 	if !okName || !okVote {
-	// 		fmt.Println("Invalid data format")
-	// 		continue
-	// 	}
-	//
-	//    room.voteMap[name] = vote
-	//
-	//
-	//
-	//    vote_div := renderVoteDiv(room) 
-	//    sendResponse(room, vote_div)

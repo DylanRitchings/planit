@@ -8,7 +8,7 @@ server/planit
 *.tfstate
 *.tfstate.*
 
-# General
+# Mac
 .DS_Store
 .AppleDouble
 .LSOverride

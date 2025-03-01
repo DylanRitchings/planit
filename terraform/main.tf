@@ -53,29 +53,6 @@ resource "oci_core_instance" "planit_server" {
     ssh_authorized_keys = file(var.ssh_public_key)
   }
 
-  # provisioner "remote-exec" {
-  #   inline = [
-  #     "mkdir -p /home/ubuntu/planit"  
-  #   ]
-  #   connection {
-  #     type        = "ssh"
-  #     host        = self.public_ip
-  #     user        = "ubuntu"
-  #     private_key = file("~/.ssh/id_rsa")
-  #   }
-  # }
-
-  # provisioner "file" {
-  #   source      = var.server_dir
-  #   destination = "/home/ubuntu/planit/"
-  #   connection {
-  #     type        = "ssh"
-  #     host        = self.public_ip
-  #     user        = "ubuntu"  
-  #     private_key = file("~/.ssh/id_rsa")
-  #   }
-  # }
-
 }
 
 resource "cloudflare_dns_record" "planit" {
